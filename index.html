@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Taco Time</title>
+    
+    <!-- Firebase CDN -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    
     <style>
         body {
             margin: 0;
@@ -120,9 +125,13 @@
 
         #leaderboardList {
             color: #fff;
-            font-size: 22px;
+            font-size: 18px;
             margin-bottom: 24px;
             text-align: left;
+            max-height: 60vh;
+            overflow-y: auto;
+            width: 100%;
+            padding-right: 10px;
         }
 
         #nameEntry {
@@ -145,8 +154,14 @@
         }
 
         #submitNameBtn, #closeLeaderboardBtn {
-            font-size: 20px;
-            padding: 10px 28px;
+            font-size: 18px;
+            padding: 12px 24px;
+            background: #8a0083;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
             margin-top: 10px;
         }
     </style>
@@ -160,6 +175,9 @@
             <button id="leaderboardBtn">View Leaderboard</button>
             <button id="musicBtn">Music: On</button>
             <button id="sfxBtn">SFX: On</button>
+            <div id="totalTacos" style="color: #FFD700; font-size: 18px; font-weight: bold; margin-top: 15px; text-align: center;">
+                Total Tacos Consumed: 0
+            </div>
         </div>
     </div>
     <div id="score">Score: 0</div>
@@ -179,6 +197,33 @@
     </div>
 
     <script>
+        // Firebase initialization (simple compat version)
+        let firebaseDB = null;
+        let firebaseInitialized = false;
+
+        function initFirebase() {
+            try {
+                const firebaseConfig = {
+                    apiKey: "AIzaSyBrfnn4kyEJRR3CzUNXFIdFKWZhPdj9B2c",
+                    authDomain: "tacotime-2d579.firebaseapp.com",
+                    projectId: "tacotime-2d579",
+                    storageBucket: "tacotime-2d579.firebasestorage.app",
+                    messagingSenderId: "123757711114",
+                    appId: "1:123757711114:web:8155997df97b034d38b4f3"
+                };
+                firebase.initializeApp(firebaseConfig);
+                firebaseDB = firebase.firestore();
+                firebaseInitialized = true;
+                console.log('Firebase ready');
+            } catch (error) {
+                console.log('Firebase unavailable:', error);
+                firebaseInitialized = false;
+            }
+        }
+
+        // Initialize Firebase when page loads
+        setTimeout(initFirebase, 500);
+
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const scoreElement = document.getElementById('score');
@@ -555,6 +600,11 @@
                     score += 10;
                     scoreElement.textContent = 'Score: ' + score;
                     playCrunchSound(); // Play crunch sound when taco is caught
+                    
+                    // Increment total tacos consumed
+                    totalTacosConsumed++;
+                    localStorage.setItem('totalTacosConsumed', totalTacosConsumed);
+                    
                     tacos.splice(i, 1);
                     continue;
                 }
@@ -666,71 +716,138 @@
         // Start the game
         gameLoop();
 
-        // Leaderboard logic
+        // Leaderboard logic with Firebase integration
         const leaderboardOverlay = document.getElementById('leaderboardOverlay');
         const leaderboardList = document.getElementById('leaderboardList');
 
-        let leaderboard = JSON.parse(localStorage.getItem('tacoLeaderboard') || '[]'); // [{name, score}]
-        const LEADERBOARD_SIZE = 1000; // Store up to 1000 scores
-        const DISPLAY_SIZE = 10; // Show 10 scores around player
+        let leaderboard = JSON.parse(localStorage.getItem('tacoLeaderboard') || '[]');
+        const LEADERBOARD_SIZE = 1000;
+        const DISPLAY_SIZE = 10;
         let playerScoreIndex = -1;
 
-        // Show leaderboard overlay
-        function showLeaderboard(finalScore) {
-            // Play intro music when leaderboard appears
+        // Total tacos consumed tracking
+        let totalTacosConsumed = parseInt(localStorage.getItem('totalTacosConsumed') || '0');
+        
+        // Update display on page load
+        function updateTacoCounterDisplay() {
+            const totalTacosElement = document.getElementById('totalTacos');
+            if (totalTacosElement) {
+                totalTacosElement.textContent = `Total Tacos Consumed: ${totalTacosConsumed.toLocaleString()}`;
+            }
+        }
+        
+        // Initialize display
+        updateTacoCounterDisplay();
+
+        // Firebase functions
+        async function saveToFirebase(name, score) {
+            if (!firebaseInitialized || !firebaseDB) return false;
+            try {
+                await firebaseDB.collection('leaderboard').add({
+                    name: name,
+                    score: score,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    date: new Date().toISOString()
+                });
+                return true;
+            } catch (error) {
+                console.error('Firebase save failed:', error);
+                return false;
+            }
+        }
+
+        async function saveTotalTacosToFirebase() {
+            if (!firebaseInitialized || !firebaseDB) return false;
+            try {
+                // Use a document ID based on a simple identifier (could be enhanced with user auth later)
+                const userDocId = 'player_' + (localStorage.getItem('playerId') || generatePlayerId());
+                await firebaseDB.collection('playerStats').doc(userDocId).set({
+                    totalTacosConsumed: totalTacosConsumed,
+                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+                return true;
+            } catch (error) {
+                console.error('Firebase taco total save failed:', error);
+                return false;
+            }
+        }
+
+        function generatePlayerId() {
+            const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('playerId', id);
+            return id;
+        }
+
+        async function loadFromFirebase() {
+            if (!firebaseInitialized || !firebaseDB) return [];
+            try {
+                const snapshot = await firebaseDB.collection('leaderboard')
+                    .orderBy('score', 'desc').limit(1000).get();
+                const scores = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    scores.push({name: data.name, score: data.score, date: data.date});
+                });
+                return scores;
+            } catch (error) {
+                console.error('Firebase load failed:', error);
+                return [];
+            }
+        }
+
+        // Enhanced show leaderboard with Firebase
+        async function showLeaderboard(finalScore) {
             if (musicEnabled) {
                 startMenuMusic();
             }
             
-            // Add the new score to leaderboard and sort
+            // Always save locally first
             leaderboard.push({name: '____', score: finalScore, isNew: true});
             leaderboard.sort((a, b) => b.score - a.score);
-            
-            // Keep only top 1000 scores
             if (leaderboard.length > LEADERBOARD_SIZE) {
                 leaderboard = leaderboard.slice(0, LEADERBOARD_SIZE);
             }
-            
-            // Find the player's position
             playerScoreIndex = leaderboard.findIndex(entry => entry.isNew);
             
-            // Calculate which scores to display (4 above, player, 5 below)
-            let startIndex, endIndex;
-            if (playerScoreIndex === -1) {
-                // Player didn't make top 1000, show top 10
-                startIndex = 0;
-                endIndex = Math.min(DISPLAY_SIZE, leaderboard.length);
-            } else {
-                // Show 4 above, player, and 5 below (total 10)
-                startIndex = Math.max(0, playerScoreIndex - 4);
-                endIndex = Math.min(leaderboard.length, startIndex + DISPLAY_SIZE);
-                
-                // Adjust if we're near the end of the list
-                if (endIndex - startIndex < DISPLAY_SIZE) {
-                    startIndex = Math.max(0, endIndex - DISPLAY_SIZE);
-                }
+            // Try to load global scores
+            const globalScores = await loadFromFirebase();
+            const useGlobal = globalScores.length > 0;
+            
+            // Use global if available, otherwise local
+            const displayBoard = useGlobal ? 
+                [...globalScores, {name: '____', score: finalScore, isNew: true}].sort((a, b) => b.score - a.score) :
+                leaderboard;
+            
+            const displayIndex = displayBoard.findIndex(entry => entry.isNew);
+            
+            // Calculate display window (4 above, player, 5 below)
+            let start = Math.max(0, displayIndex - 4);
+            let end = Math.min(displayBoard.length, start + DISPLAY_SIZE);
+            if (end - start < DISPLAY_SIZE) {
+                start = Math.max(0, end - DISPLAY_SIZE);
             }
             
-            const displayScores = leaderboard.slice(startIndex, endIndex);
-            const playerRank = playerScoreIndex + 1;
+            const displayScores = displayBoard.slice(start, end);
+            const rank = displayIndex + 1;
 
-            // Display the leaderboard
-            leaderboardList.innerHTML = '<h3 style="margin-top:0; color:#FFD700; text-align:center;">🏆 HIGH SCORES 🏆</h3>';
+            // Display leaderboard
+            const title = useGlobal ? '🌍 GLOBAL HIGH SCORES 🌍' : '🏆 HIGH SCORES 🏆';
+            leaderboardList.innerHTML = `<h3 style="margin-top:0; color:#FFD700; text-align:center;">${title}</h3>`;
             
-            if (playerScoreIndex !== -1) {
-                leaderboardList.innerHTML += `<p style="color:#FFD700; text-align:center; margin:10px 0; font-size:18px;">Your Rank: #${playerRank} of ${leaderboard.length}</p>`;
+            if (displayIndex !== -1) {
+                const rankText = useGlobal ? 'Global Rank' : 'Rank';
+                leaderboardList.innerHTML += `<p style="color:#FFD700; text-align:center; margin:10px 0; font-size:18px;">Your ${rankText}: #${rank} of ${displayBoard.length}</p>`;
             }
             
-            if (startIndex > 0) {
-                leaderboardList.innerHTML += `<div style="color:#888; text-align:center; margin:8px 0;">... ${startIndex} higher scores ...</div>`;
+            if (start > 0) {
+                leaderboardList.innerHTML += `<div style="color:#888; text-align:center; margin:8px 0;">... ${start} higher scores ...</div>`;
             }
             
             displayScores.forEach((entry, i) => {
-                const actualRank = startIndex + i + 1;
+                const actualRank = start + i + 1;
                 const medal = actualRank === 1 ? '🥇' : actualRank === 2 ? '🥈' : actualRank === 3 ? '🥉' : `#${actualRank}`;
                 
                 if (entry.isNew) {
-                    // This is the new player's score - show input field
                     leaderboardList.innerHTML += `
                         <li style="color:#FFD700; font-weight:bold; background:rgba(255,215,0,0.2); padding:12px; margin:6px 0; border-radius:6px; border:2px solid #FFD700; list-style:none;">
                             ${medal} <input type="text" maxlength="8" placeholder="Enter Name" 
@@ -738,37 +855,41 @@
                             id="nameInput" autofocus /> - ${entry.score} points
                         </li>`;
                 } else {
-                    // Existing leaderboard entry
                     const entryColor = actualRank <= 3 ? '#FFD700' : '#fff';
+                    const dateStr = entry.date ? new Date(entry.date).toLocaleDateString() : '';
+                    const dateDisplay = dateStr && useGlobal ? ` <span style="color:#888; font-size:14px;">(${dateStr})</span>` : '';
                     leaderboardList.innerHTML += `
                         <li style="color:${entryColor}; padding:8px; margin:4px 0; border-radius:4px; list-style:none;">
-                            ${medal} ${entry.name} - ${entry.score} points
+                            ${medal} ${entry.name} - ${entry.score} points${dateDisplay}
                         </li>`;
                 }
             });
             
-            if (endIndex < leaderboard.length) {
-                leaderboardList.innerHTML += `<div style="color:#888; text-align:center; margin:8px 0;">... ${leaderboard.length - endIndex} lower scores ...</div>`;
+            if (end < displayBoard.length) {
+                leaderboardList.innerHTML += `<div style="color:#888; text-align:center; margin:8px 0;">... ${displayBoard.length - end} lower scores ...</div>`;
             }
 
             leaderboardOverlay.style.display = 'flex';
 
-            // Handle name input if player made the leaderboard
-            if (playerScoreIndex !== -1) {
+            // Handle name input
+            if (displayIndex !== -1) {
                 setTimeout(() => {
                     const nameInput = document.getElementById('nameInput');
                     if (nameInput) {
                         nameInput.focus();
                         
-                        const submitScore = () => {
+                        const submitScore = async () => {
                             const playerName = nameInput.value.trim() || 'Anonymous';
                             
-                            // Update the entry in the leaderboard
+                            // Always save locally
                             leaderboard[playerScoreIndex] = {name: playerName, score: finalScore};
                             localStorage.setItem('tacoLeaderboard', JSON.stringify(leaderboard));
                             
-                            // Update display to show final saved leaderboard
-                            displayFinalLeaderboard(playerName, finalScore, playerRank);
+                            // Try Firebase for both score and taco total
+                            const firebaseSaved = await saveToFirebase(playerName, finalScore);
+                            await saveTotalTacosToFirebase(); // Sync total tacos to Firebase
+                            
+                            displayFinalLeaderboard(playerName, finalScore, rank, firebaseSaved, useGlobal);
                         };
                         
                         nameInput.addEventListener('keydown', function(e) {
@@ -777,7 +898,6 @@
                             }
                         });
                         
-                        // Auto-submit after 60 seconds
                         setTimeout(() => {
                             if (document.getElementById('nameInput')) {
                                 submitScore();
@@ -786,62 +906,28 @@
                     }
                 }, 100);
             } else {
-                // Player didn't make leaderboard, show message and return to menu
+                const minScore = displayBoard.length > 0 ? displayBoard[displayBoard.length - 1]?.score || 0 : 0;
                 leaderboardList.innerHTML += `
                     <div style="color:#ccc; text-align:center; margin-top:20px; padding:16px; background:rgba(0,0,0,0.3); border-radius:8px;">
                         <p style="font-size:20px; color:#FFD700;">Your Score: ${finalScore} points</p>
-                        <p>You need ${leaderboard[leaderboard.length - 1]?.score + 1 || finalScore + 1} points to make the leaderboard!</p>
+                        <p>You need ${minScore + 1} points to make the ${useGlobal ? 'global ' : ''}leaderboard!</p>
                         <p>Keep trying!</p>
                     </div>`;
-                
-                setTimeout(() => {
-                    resetToMenu();
-                }, 4000);
+                setTimeout(() => resetToMenu(), 4000);
             }
         }
 
-        // Display the final leaderboard after name is saved
-        function displayFinalLeaderboard(playerName, playerScore, playerRank) {
-            // Reload leaderboard from localStorage
-            leaderboard = JSON.parse(localStorage.getItem('tacoLeaderboard') || '[]');
+        function displayFinalLeaderboard(playerName, playerScore, playerRank, firebaseSaved, useGlobal) {
+            const statusMsg = firebaseSaved ? 
+                '<p style="color:#4CAF50; text-align:center; font-size:14px;">✅ Saved globally!</p>' :
+                '<p style="color:#FF9800; text-align:center; font-size:14px;">⚠️ Saved locally only</p>';
             
-            // Find player's current position
-            const currentPlayerIndex = leaderboard.findIndex(entry => entry.name === playerName && entry.score === playerScore);
+            const title = useGlobal ? '🌍 GLOBAL HIGH SCORES 🌍' : '🏆 HIGH SCORES 🏆';
+            const rankText = useGlobal ? 'Global Rank' : 'Rank';
             
-            // Calculate display window (4 above, player, 5 below)
-            let startIndex = Math.max(0, currentPlayerIndex - 4);
-            let endIndex = Math.min(leaderboard.length, startIndex + DISPLAY_SIZE);
-            
-            // Adjust if we're near the end
-            if (endIndex - startIndex < DISPLAY_SIZE) {
-                startIndex = Math.max(0, endIndex - DISPLAY_SIZE);
-            }
-            
-            const displayScores = leaderboard.slice(startIndex, endIndex);
-            
-            leaderboardList.innerHTML = '<h3 style="margin-top:0; color:#FFD700; text-align:center;">🏆 HIGH SCORES 🏆</h3>';
-            leaderboardList.innerHTML += `<p style="color:#FFD700; text-align:center; margin:10px 0; font-size:18px;">Your Rank: #${playerRank} of ${leaderboard.length}</p>`;
-            
-            if (startIndex > 0) {
-                leaderboardList.innerHTML += `<div style="color:#888; text-align:center; margin:8px 0;">... ${startIndex} higher scores ...</div>`;
-            }
-            
-            displayScores.forEach((entry, i) => {
-                const actualRank = startIndex + i + 1;
-                const medal = actualRank === 1 ? '🥇' : actualRank === 2 ? '🥈' : actualRank === 3 ? '🥉' : `#${actualRank}`;
-                const isPlayer = entry.name === playerName && entry.score === playerScore;
-                const entryColor = isPlayer ? '#FFD700' : (actualRank <= 3 ? '#FFD700' : '#fff');
-                const bgStyle = isPlayer ? 'background:rgba(255,215,0,0.2); font-weight:bold; border:2px solid #FFD700;' : '';
-                
-                leaderboardList.innerHTML += `
-                    <li style="color:${entryColor}; padding:12px; margin:6px 0; border-radius:6px; ${bgStyle}">
-                        ${medal} ${entry.name} - ${entry.score} points
-                    </li>`;
-            });
-            
-            if (endIndex < leaderboard.length) {
-                leaderboardList.innerHTML += `<div style="color:#888; text-align:center; margin:8px 0;">... ${leaderboard.length - endIndex} lower scores ...</div>`;
-            }
+            leaderboardList.innerHTML = `<h3 style="margin-top:0; color:#FFD700; text-align:center;">${title}</h3>`;
+            leaderboardList.innerHTML += statusMsg;
+            leaderboardList.innerHTML += `<p style="color:#FFD700; text-align:center; margin:10px 0;">Your ${rankText}: #${playerRank}</p>`;
             
             leaderboardList.innerHTML += `
                 <div style="text-align:center; margin-top:20px;">
@@ -857,34 +943,45 @@
             canvas.style.display = 'none';
             scoreElement.style.display = 'none';
             document.getElementById('instructions').style.display = 'none';
-            gameContainer.classList.remove('game-active'); // Remove overlay class
+            gameContainer.classList.remove('game-active');
             score = 0;
             lives = 10;
             tacos = [];
             scoreElement.textContent = 'Score: 0';
-            gameRunning = false; // Set gameRunning to false when returning to menu
+            gameRunning = false;
             
-            // Start menu music when returning to menu
+            // Update taco counter display when returning to menu
+            updateTacoCounterDisplay();
+            
             if (musicEnabled) {
                 startMenuMusic();
             }
         }
 
-        // View full leaderboard from menu
-        function viewFullLeaderboard() {
-            // Play intro music when leaderboard appears
+        async function viewFullLeaderboard() {
             if (musicEnabled) {
                 startMenuMusic();
             }
             
-            const currentLeaderboard = JSON.parse(localStorage.getItem('tacoLeaderboard') || '[]');
+            leaderboardList.innerHTML = '<h3 style="margin-top:0; color:#FFD700; text-align:center;">🌍 LOADING... 🌍</h3>';
+            leaderboardOverlay.style.display = 'flex';
             
-            leaderboardList.innerHTML = '<h3 style="margin-top:0; color:#FFD700; text-align:center;">🏆 ALL HIGH SCORES 🏆</h3>';
+            const globalScores = await loadFromFirebase();
+            const useGlobal = globalScores.length > 0;
+            const currentLeaderboard = useGlobal ? globalScores : JSON.parse(localStorage.getItem('tacoLeaderboard') || '[]');
+            
+            const title = useGlobal ? '🌍 GLOBAL HIGH SCORES 🌍' : '🏆 LOCAL HIGH SCORES 🏆';
+            leaderboardList.innerHTML = `<h3 style="margin-top:0; color:#FFD700; text-align:center;">${title}</h3>`;
             
             if (currentLeaderboard.length === 0) {
                 leaderboardList.innerHTML += '<div style="color:#ccc; text-align:center; padding:20px;">No scores yet!<br>Be the first to play!</div>';
             } else {
-                leaderboardList.innerHTML += `<p style="color:#FFD700; text-align:center; margin:10px 0;">Total Players: ${currentLeaderboard.length}</p>`;
+                const playerText = useGlobal ? 'Global Players' : 'Local Players';
+                leaderboardList.innerHTML += `<p style="color:#FFD700; text-align:center; margin:10px 0;">Total ${playerText}: ${currentLeaderboard.length}</p>`;
+                
+                if (!useGlobal) {
+                    leaderboardList.innerHTML += `<p style="color:#888; text-align:center; margin:10px 0; font-size:14px;">(Global scores unavailable)</p>`;
+                }
                 
                 currentLeaderboard.forEach((entry, i) => {
                     const rank = i + 1;
@@ -892,15 +989,19 @@
                     const entryColor = rank <= 3 ? '#FFD700' : '#fff';
                     const bgColor = rank <= 3 ? 'background:rgba(255,215,0,0.1);' : '';
                     
+                    const dateStr = entry.date && useGlobal ? new Date(entry.date).toLocaleDateString() : '';
+                    const dateDisplay = dateStr ? `<span style="color:#888; font-size:12px; display:block;">${dateStr}</span>` : '';
+                    
                     leaderboardList.innerHTML += `
                         <div style="color:${entryColor}; padding:12px; margin:6px 0; border-radius:6px; ${bgColor} display:flex; justify-content:space-between; align-items:center;">
-                            <span>${medal} ${entry.name}</span>
+                            <div>
+                                <span>${medal} ${entry.name}</span>
+                                ${dateDisplay}
+                            </div>
                             <span style="font-weight:bold;">${entry.score} points</span>
                         </div>`;
                 });
             }
-            
-            leaderboardOverlay.style.display = 'flex';
         }
 
         // Close leaderboard
