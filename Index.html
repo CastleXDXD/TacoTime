@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taco Time</title>
+    
+    <!-- Firebase CDN -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: #3b3b3b;
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        h1 {
+            color: #00728f;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        #gameCanvas {
+            border: 4px solid #8a0083;
+            border-radius: 10px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+            background: #87CEEB;
+        }
+        
+        #score {
+            font-size: 24px;
+            font-weight: bold;
+            color: #000000;
+            margin-top: 10px;
+        }
+        
+        #instructions {
+            margin-top: 10px;
+            color: #ffffff;
+            text-align: center;
+        }
+
+        /* Container for canvas and start menu - centered on page */
+        .game-container {
+            position: relative;
+            display: inline-block;
+            margin: 0 auto;
+        }
+
+        /* Start menu - positioned normally when canvas is hidden, overlay when canvas is shown */
+        #startMenu {
+            width: 800px;
+            height: 600px;
+            background: rgba(60,60,60,0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            border-radius: 10px;
+            border: 4px solid #8a0083;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+        }
+
+        /* When canvas is visible, position menu as overlay */
+        .game-container.game-active #startMenu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: none;
+            box-shadow: none;
+        }
+
+        #startMenu button {
+            border: none;
+            border-radius: 8px;
+            background: #8a0083;
+            color: #fff;
+            font-size: 24px;
+            padding: 15px 30px;
+            margin: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        #startMenu button:hover {
+            background: #00728f;
+        }
+
+        #musicBtn, #sfxBtn {
+            font-size: 20px;
+            padding: 10px 28px;
+        }
+
+        h1#gameTitle {
+            position: relative;
+            z-index: 20;
+        }
+
+        /* Leaderboard styles */
+        #leaderboardOverlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: rgba(60,60,60,0.95);
+            z-index: 30;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #leaderboardOverlay h2 {
+            color: #fff;
+            margin-bottom: 24px;
+        }
+
+        #leaderboardList {
+            color: #fff;
+            font-size: 18px;
+            margin-bottom: 24px;
+            text-align: left;
+            max-height: 60vh;
+            overflow-y: auto;
+            width: 100%;
+            padding-right: 10px;
+        }
+
+        #nameEntry {
+            display: none;
+            flex-direction: row;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        #nameEntry span {
+            color: #fff;
+            font-size: 20px;
+            margin-right: 8px;
+        }
+
+        #playerNameInput {
+            font-size: 20px;
+            width: 80px;
+            text-align: center;
+        }
+
+        #submitNameBtn, #closeLeaderboardBtn {
+            font-size: 18px;
+            padding: 12px 24px;
+            background: #8a0083;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1 id="gameTitle">🌮 Taco Time 🌮</h1>
+    <div class="game-container">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="startMenu">
+            <button id="startBtn">Start Game</button>
+            <button id="leaderboardBtn">View Leaderboard</button>
+            <button id="musicBtn">Music: On</button>
+            <button id="sfxBtn">SFX: On</button>
+            <div id="totalTacos" style="color: #FFD700; font-size: 18px; font-weight: bold; margin-top: 15px; text-align: center;">
+                Total Tacos Consumed: 0
+            </div>
+        </div>
+    </div>
+    <div id="score">Score: 0</div>
+    <div id="instructions">Catch the Tacos, You have 10 Lives!<br>Use A/D keys, Left/Right arrows, or touch left/right half of screen to move!<br>ESC or P to toggle pause</div>
+
+    <!-- Add pause menu overlay -->
+    <div id="pauseOverlay" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); z-index:25; flex-direction:column; align-items:center; justify-content:center;">
+        <div style="background:#222; padding:40px; border-radius:16px; box-shadow:0 4px 24px #000; display:flex; flex-direction:column; align-items:center; border:4px solid #8a0083;">
+            <h2 style="color:#FFD700; margin-bottom:30px; font-size:32px;">PAUSED</h2>
+            <button id="pauseMusicBtn" style="font-size:20px; padding:15px 30px; margin:10px; background:#8a0083; color:#fff; border:none; border-radius:8px; cursor:pointer; transition:background 0.2s; width:200px;" onmouseover="this.style.background='#00728f'" onmouseout="this.style.background='#8a0083'">
+                Music: On
+            </button>
+            <button id="pauseSfxBtn" style="font-size:20px; padding:15px 30px; margin:10px; background:#8a0083; color:#fff; border:none; border-radius:8px; cursor:pointer; transition:background 0.2s; width:200px;" onmouseover="this.style.background='#00728f'" onmouseout="this.style.background='#8a0083'">
+                SFX: On
+            </button>
+        </div>
+    </div>
+
+    <!-- Add leaderboard overlay div -->
+    <div id="leaderboardOverlay" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(60,60,60,0.95); z-index:30; flex-direction:column; align-items:center; justify-content:center;">
+        <div style="background:#222; padding:32px 48px; border-radius:16px; box-shadow:0 4px 24px #000; display:flex; flex-direction:column; align-items:center; max-height:80vh; overflow:hidden;">
+            <h2 style="color:#fff; margin-bottom:24px;">🏆 Leaderboard 🏆</h2>
+            <div id="leaderboardList" style="color:#fff; font-size:18px; margin-bottom:24px; text-align:left; max-height:60vh; overflow-y:auto; width:100%; padding-right:10px;">
+                <!-- Scrollable leaderboard content goes here -->
+            </div>
+            <button id="closeLeaderboardBtn" style="font-size:18px; padding:12px 24px; background:#8a0083; color:#fff; border:none; border-radius:8px; cursor:pointer; transition:background 0.2s;" onmouseover="this.style.background='#00728f'" onmouseout="this.style.background='#8a0083'">
+                Close<br><span style="font-size:12px;">(remain anonymous)</span>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Firebase initialization (simple compat version)
+        let firebaseDB = null;
+        let firebaseInitialized = false;
+
+        function initFirebase() {
+            try {
+                const firebaseConfig = {
+                    apiKey: "AIzaSyBrfnn4kyEJRR3CzUNXFIdFKWZhPdj9B2c",
+                    authDomain: "tacotime-2d579.firebaseapp.com",
+                    projectId: "tacotime-2d579",
+                    storageBucket: "tacotime-2d579.firebasestorage.app",
+                    messagingSenderId: "123757711114",
+                    appId: "1:123757711114:web:8155997df97b034d38b4f3"
+                };
+                firebase.initializeApp(firebaseConfig);
+                firebaseDB = firebase.firestore();
+                firebaseInitialized = true;
+                console.log('Firebase ready');
+            } catch (error) {
+                console.log('Firebase unavailable:', error);
+                firebaseInitialized = false;
+            }
+        }
+
+        // Initialize Firebase when page loads
+        setTimeout(initFirebase, 500);
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const gameContainer = document.querySelector('.game-container');
+
+        // Responsive canvas scaling
+        function resizeCanvas() {
+            const maxWidth = window.innerWidth - 40;
+            const maxHeight = window.innerHeight - 200;
+            const aspectRatio = 800 / 600;
+            
+            let newWidth = Math.min(800, maxWidth);
+            let newHeight = newWidth / aspectRatio;
+            
+            if (newHeight > maxHeight) {
+                newHeight = maxHeight;
+                newWidth = newHeight * aspectRatio;
+            }
+            
+            canvas.style.width = newWidth + 'px';
+            canvas.style.height = newHeight + 'px';
+            
+            // Update start menu size to match canvas
+            const startMenu = document.getElementById('startMenu');
+            startMenu.style.width = newWidth + 'px';
+            startMenu.style.height = newHeight + 'px';
+        }
+
+        // Initialize canvas size
+        resizeCanvas();
+        
+        // Resize on window resize
+        window.addEventListener('resize', resizeCanvas);
+
+        // Game state
+        let score = 0;
+        let gameRunning = true;
+        let gamePaused = false; // Add pause state
+        let difficultyTimer = 0;
+        let baseTacoSpeed = 360; // pixels per second (doubled from 180)
+        let basePlayerSpeed = 960; // pixels per second (doubled from 480)
+        let difficultyMultiplier = 1;
+        let lastDifficultyTime = 0;
+        let lives = 10;
+        let lastTime = 0;
+
+        // Touch controls
+        let touchingLeft = false;
+        let touchingRight = false;
+
+        // Player (head)
+        const player = {
+            x: canvas.width / 2 - 75,
+            y: canvas.height - 130,
+            width: 150,
+            height: 150,
+            speed: basePlayerSpeed
+        };
+
+        // Tacos array
+        let tacos = [];
+        let lastTacoSpawn = 0;
+        const tacoSpawnRate = 1.5; // seconds between spawns (was 90 frames at 60fps = 1.5s)
+
+        // Audio system
+        const audio1 = new Audio();
+        const audio2 = new Audio();
+        const introAudio = new Audio(); // Menu music
+        const crunchAudio = new Audio(); // New crunch sound effect
+        const speedAudio = new Audio(); // Speed increase sound effect
+        let currentAudio = null;
+        let musicEnabled = true;
+        let sfxEnabled = true; // New SFX toggle
+        let audioInitialized = false;
+
+        // Initialize audio files immediately when page loads
+        function initializeAudio() {
+            audio1.src = 'TacoCatch1.mp3';
+            audio2.src = 'TacoCatch2.mp3';
+            introAudio.src = 'intro.mp3';
+            crunchAudio.src = 'crunch.mp3'; // Add crunch sound
+            speedAudio.src = 'speed.mp3'; // Add speed increase sound
+            
+            // Pre-load all audio files for instant playback
+            audio1.preload = 'auto';
+            audio2.preload = 'auto';
+            introAudio.preload = 'auto';
+            crunchAudio.preload = 'auto';
+            speedAudio.preload = 'auto';
+            
+            audio1.load();
+            audio2.load();
+            introAudio.load();
+            crunchAudio.load();
+            speedAudio.load();
+            
+            // Set intro music to loop
+            introAudio.loop = true;
+            
+            audio1.addEventListener('ended', () => {
+                if (gameRunning && musicEnabled) {
+                    playNextTrack(audio2);
+                }
+            });
+            
+            audio2.addEventListener('ended', () => {
+                if (gameRunning && musicEnabled) {
+                    playNextTrack(audio1);
+                }
+            });
+
+            audio1.addEventListener('error', (e) => {
+                console.error('Error loading TacoCatch1.mp3:', e);
+            });
+
+            audio2.addEventListener('error', (e) => {
+                console.error('Error loading TacoCatch2.mp3:', e);
+            });
+
+            introAudio.addEventListener('error', (e) => {
+                console.error('Error loading intro.mp3:', e);
+            });
+
+            crunchAudio.addEventListener('error', (e) => {
+                console.error('Error loading crunch.mp3:', e);
+            });
+
+            speedAudio.addEventListener('error', (e) => {
+                console.error('Error loading speed.mp3:', e);
+            });
+
+            audioInitialized = true;
+            
+            // Try to start intro music immediately (may fail due to autoplay restrictions)
+            if (musicEnabled) {
+                startMenuMusic();
+            }
+        }
+
+        // Add click handlers to try starting music on any user interaction
+        document.addEventListener('click', tryStartMenuMusic, { once: true });
+        document.addEventListener('keydown', tryStartMenuMusic, { once: true });
+
+        // Initialize audio immediately when page loads
+        initializeAudio();
+
+        function playNextTrack(audioElement) {
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.currentTime = 0;
+            }
+            
+            currentAudio = audioElement;
+            currentAudio.currentTime = 0;
+            currentAudio.play().catch(e => {
+                console.log('Audio play failed:', e);
+            });
+        }
+
+        // Play crunch sound effect
+        function playCrunchSound() {
+            if (sfxEnabled && audioInitialized) {
+                crunchAudio.currentTime = 0; // Reset to beginning
+                crunchAudio.play().catch(e => {
+                    console.log('Crunch sound play failed:', e);
+                });
+            }
+        }
+
+        // Play speed increase sound effect
+        function playSpeedSound() {
+            if (sfxEnabled && audioInitialized) {
+                speedAudio.currentTime = 0; // Reset to beginning
+                speedAudio.play().catch(e => {
+                    console.log('Speed sound play failed:', e);
+                });
+            }
+        }
+
+        function startGameMusic() {
+            if (musicEnabled) {
+                playNextTrack(audio1);
+            }
+        }
+
+        function startMenuMusic() {
+            if (musicEnabled && audioInitialized) {
+                stopAllMusic(); // Stop any currently playing music
+                currentAudio = introAudio;
+                introAudio.currentTime = 0;
+                introAudio.play().catch(e => {
+                    console.log('Menu music play failed (will retry on user interaction):', e);
+                });
+            }
+        }
+
+        // Function to start intro music with user interaction (for autoplay restrictions)
+        function tryStartMenuMusic() {
+            if (musicEnabled && !currentAudio && audioInitialized) {
+                startMenuMusic();
+            }
+        }
+
+        function stopAllMusic() {
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.currentTime = 0;
+                currentAudio = null;
+            }
+            // Also stop intro music specifically
+            introAudio.pause();
+            introAudio.currentTime = 0;
+        }
+
+        // Input handling - Updated to toggle pause
+        const keys = {};
+        document.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+            
+            // Handle pause/unpause toggle (P or Escape)
+            if ((e.key.toLowerCase() === 'p' || e.key === 'Escape') && gameRunning) {
+                if (gamePaused) {
+                    resumeGame();
+                } else {
+                    pauseGame();
+                }
+            }
+        });
+        document.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        // Load taco image
+        const tacoImage = new Image();
+        let imageLoaded = false;
+        
+        tacoImage.onload = function() {
+            imageLoaded = true;
+            console.log('Taco image loaded successfully!');
+            
+            // Update title with taco images
+            const titleElement = document.getElementById('gameTitle');
+            titleElement.innerHTML = '<img src="taco.png" style="width:40px;height:40px;vertical-align:middle;margin-right:10px;"> Taco Time <img src="taco.png" style="width:40px;height:40px;vertical-align:middle;margin-left:10px;">';
+        };
+        
+        tacoImage.onerror = function() {
+            console.error('Failed to load taco image. Check that the file exists and the path is correct.');
+        };
+        
+        tacoImage.src = 'taco.png'; // Place your taco image in the same folder as this HTML file
+        
+        // Load player video
+        const playerVideo = document.createElement('video');
+        let videoLoaded = false;
+        
+        playerVideo.onloadeddata = function() {
+            videoLoaded = true;
+            console.log('Player video loaded successfully!');
+        };
+        
+        playerVideo.onerror = function() {
+            console.error('Failed to load player video. Check that TacoCatch.webm exists and the path is correct.');
+        };
+        
+        playerVideo.src = 'TacoCatch.webm';
+        playerVideo.loop = true;
+        playerVideo.muted = true; // Required for autoplay
+        playerVideo.autoplay = true;
+        playerVideo.play();
+
+        // Load background image
+        const bgImage = new Image();
+        let bgLoaded = false;
+        bgImage.onload = function() {
+            bgLoaded = true;
+        };
+        bgImage.src = 'background.png'; // Make sure background.png is in the same folder
+
+        // Draw lives display at bottom of screen using taco.png
+        function drawLives() {
+            const lifeSize = 30;
+            const spacing = 35;
+            const startX = 10;
+            const startY = canvas.height - lifeSize - 10;
+            
+            for (let i = 0; i < lives; i++) {
+                if (imageLoaded) {
+                    ctx.drawImage(tacoImage, startX + (i * spacing), startY, lifeSize, lifeSize);
+                } else {
+                    // Fallback to basic taco shapes
+                    ctx.fillStyle = '#D2691E';
+                    ctx.beginPath();
+                    ctx.arc(startX + (i * spacing) + lifeSize/2, startY + lifeSize/2, lifeSize/3, 0, Math.PI);
+                    ctx.fill();
+                }
+            }
+        }
+
+        // Draw player (video or fallback head)
+        function drawPlayer() {
+            if (videoLoaded) {
+                // Draw the video
+                ctx.drawImage(playerVideo, player.x, player.y, player.width, player.height);
+            } else {
+                // Fallback to basic head if video not loaded
+                ctx.fillStyle = '#FDBCB4'; // Skin color
+                ctx.beginPath();
+                ctx.arc(player.x + 25, player.y + 25, 25, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Eyes
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.arc(player.x + 18, player.y + 18, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(player.x + 32, player.y + 18, 3, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Smile
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(player.x + 25, player.y + 25, 10, 0, Math.PI);
+                ctx.stroke();
+            }
+        }
+
+        // Draw taco with rotation
+        function drawTaco(taco) {
+            if (!imageLoaded) {
+                // Fallback to basic taco drawing if image not loaded
+                ctx.fillStyle = '#D2691E';
+                ctx.beginPath();
+                ctx.arc(taco.x + taco.width/2, taco.y + taco.height/2, taco.width/3, 0, Math.PI);
+                ctx.fill();
+                return;
+            }
+            
+            ctx.save();
+            
+            // Move to taco center for rotation
+            ctx.translate(taco.x + taco.width/2, taco.y + taco.height/2);
+            
+            // Rotate based on taco's current rotation
+            ctx.rotate(taco.rotation);
+            
+            // Draw the taco image centered
+            ctx.drawImage(tacoImage, -taco.width/2, -taco.height/2, taco.width, taco.height);
+            
+            ctx.restore();
+        }
+
+        // Create new taco
+        function createTaco() {
+            const totalRotations = 1 + Math.random(); // 1 to 2 rotations
+            const fallDistance = canvas.height + 60; // Total distance taco will fall
+            const speed = (baseTacoSpeed + Math.random() * 120) * difficultyMultiplier; // pixels per second
+            const fallTime = fallDistance / speed; // time to fall in seconds
+            
+            return {
+                x: Math.random() * (canvas.width - 50),
+                y: -50,
+                width: 50,
+                height: 50,
+                speed: speed,
+                rotation: 0,
+                rotationSpeed: (totalRotations * 2 * Math.PI) / fallTime // radians per second
+            };
+        }
+
+        // Update difficulty every 30 seconds
+        function updateDifficulty(currentTime) {
+            if (gamePaused) return; // Don't update when paused
+            
+            // Check if 30 seconds have passed since last difficulty increase
+            if (currentTime - lastDifficultyTime >= 30000) { // 30 seconds in milliseconds
+                difficultyMultiplier *= 1.1; // Increase by 10%
+                lastDifficultyTime = currentTime;
+                console.log('Difficulty increased! Speed multiplier: ' + difficultyMultiplier.toFixed(2));
+                
+                // Play speed increase sound effect
+                playSpeedSound();
+            }
+        }
+
+        // Update player position
+        function updatePlayer(deltaTime) {
+            if (gamePaused) return; // Don't update when paused
+            
+            const currentSpeed = basePlayerSpeed * difficultyMultiplier * deltaTime;
+            
+            // Check keyboard input or touch input
+            const movingLeft = (keys['a'] || keys['arrowleft'] || touchingLeft) && player.x > 0;
+            const movingRight = (keys['d'] || keys['arrowright'] || touchingRight) && player.x < canvas.width - player.width;
+            
+            if (movingLeft) {
+                player.x -= currentSpeed;
+            }
+            if (movingRight) {
+                player.x += currentSpeed;
+            }
+        }
+
+        // Pause game functions
+        const pauseOverlay = document.getElementById('pauseOverlay');
+        const pauseMusicBtn = document.getElementById('pauseMusicBtn');
+        const pauseSfxBtn = document.getElementById('pauseSfxBtn');
+
+        function pauseGame() {
+            gamePaused = true;
+            pauseOverlay.style.display = 'flex';
+            
+            // Update pause menu button states to match current settings
+            pauseMusicBtn.textContent = musicEnabled ? 'Music: On' : 'Music: Off';
+            pauseSfxBtn.textContent = sfxEnabled ? 'SFX: On' : 'SFX: Off';
+        }
+
+        function resumeGame() {
+            gamePaused = false;
+            pauseOverlay.style.display = 'none';
+        }
+
+        // Pause menu button events
+        pauseMusicBtn.onclick = function() {
+            musicEnabled = !musicEnabled;
+            
+            if (!musicEnabled) {
+                stopAllMusic();
+            } else {
+                startGameMusic();
+            }
+            
+            pauseMusicBtn.textContent = musicEnabled ? 'Music: On' : 'Music: Off';
+            // Also update main menu music button to stay in sync
+            musicBtn.textContent = musicEnabled ? 'Music: On' : 'Music: Off';
+        };
+
+        pauseSfxBtn.onclick = function() {
+            sfxEnabled = !sfxEnabled;
+            pauseSfxBtn.textContent = sfxEnabled ? 'SFX: On' : 'SFX: Off';
+            // Also update main menu SFX button to stay in sync
+            sfxBtn.textContent = sfxEnabled ? 'SFX: On' : 'SFX: Off';
+        };
+
+        // Update tacos
+        function updateTacos(deltaTime, currentTime) {
+            if (gamePaused) return; // Don't update when paused
+            
+            // Spawn new tacos based on time
+            if (currentTime - lastTacoSpawn >= tacoSpawnRate * 1000) { // convert seconds to milliseconds
+                tacos.push(createTaco());
+                lastTacoSpawn = currentTime;
+            }
+
+            // Move tacos and check for collisions
+            for (let i = tacos.length - 1; i >= 0; i--) {
+                const taco = tacos[i];
+                taco.y += taco.speed * deltaTime;
+                taco.rotation += taco.rotationSpeed * deltaTime; // Update rotation
+
+                // Check collision with player
+                if (taco.x < player.x + player.width &&
+                    taco.x + taco.width > player.x &&
+                    taco.y < player.y + player.height &&
+                    taco.y + taco.height > player.y) {
+                    // Collision detected - catch taco
+                    score += 10;
+                    scoreElement.textContent = 'Score: ' + score;
+                    playCrunchSound(); // Play crunch sound when taco is caught
+                    
+                    // Increment total tacos consumed
+                    totalTacosConsumed++;
+                    localStorage.setItem('totalTacosConsumed', totalTacosConsumed);
+                    
+                    tacos.splice(i, 1);
+                    continue;
+                }
+
+                // Remove tacos that fall off screen - lose a life!
+                if (taco.y > canvas.height) {
+                    tacos.splice(i, 1);
+                    lives--;
+                    console.log('Life lost! Lives remaining: ' + lives);
+                    
+                    if (lives <= 0) {
+                        gameRunning = false;
+                        stopAllMusic(); // Stop music when game ends
+                        showLeaderboard(score);
+                    }
+                }
+            }
+        }
+
+        // Menu logic
+        const startMenu = document.getElementById('startMenu');
+        const startBtn = document.getElementById('startBtn');
+        const leaderboardBtn = document.getElementById('leaderboardBtn');
+        const musicBtn = document.getElementById('musicBtn');
+        const sfxBtn = document.getElementById('sfxBtn');
+
+        // Hide canvas and game UI until game starts
+        canvas.style.display = 'none';
+        scoreElement.style.display = 'none';
+        document.getElementById('instructions').style.display = 'none';
+
+        // Start button event
+        startBtn.onclick = function() {
+            startMenu.style.display = 'none';
+            leaderboardOverlay.style.display = 'none';
+            pauseOverlay.style.display = 'none'; // Hide pause menu if visible
+            canvas.style.display = '';
+            scoreElement.style.display = '';
+            document.getElementById('instructions').style.display = '';
+            gameContainer.classList.add('game-active'); // Add class for overlay positioning
+            score = 0; // Reset score
+            lives = 10; // Reset lives
+            tacos = []; // Clear tacos
+            gameRunning = true;
+            gamePaused = false; // Reset pause state
+            lastTime = 0; // Reset delta time
+            lastTacoSpawn = 0; // Reset spawn timer
+            lastDifficultyTime = 0; // Reset difficulty timer
+            difficultyMultiplier = 1; // Reset difficulty
+            stopAllMusic(); // Stop menu music
+            startGameMusic(); // Start the game music loop
+            gameLoop(0); // Start with timestamp 0
+        };
+
+        // Music button event
+        musicBtn.onclick = function() {
+            musicEnabled = !musicEnabled;
+            
+            if (!musicEnabled) {
+                stopAllMusic();
+            } else {
+                // If we're in menu, start menu music; if in game, start game music
+                if (!gameRunning) {
+                    startMenuMusic();
+                } else {
+                    startGameMusic();
+                }
+            }
+            
+            musicBtn.textContent = musicEnabled ? 'Music: On' : 'Music: Off';
+        };
+
+        // Leaderboard button event
+        leaderboardBtn.onclick = function() {
+            viewFullLeaderboard();
+        };
+
+        // SFX button event
+        sfxBtn.onclick = function() {
+            sfxEnabled = !sfxEnabled;
+            sfxBtn.textContent = sfxEnabled ? 'SFX: On' : 'SFX: Off';
+        };
+
+        // Prevent game from running until started
+        gameRunning = false;
+
+        // Main game loop - Updated to use delta time
+        function gameLoop(currentTime) {
+            if (!gameRunning) return;
+            
+            // Calculate delta time in seconds
+            const deltaTime = lastTime === 0 ? 0 : (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+            
+            // Skip first frame to avoid large delta
+            if (deltaTime === 0) {
+                requestAnimationFrame(gameLoop);
+                return;
+            }
+            
+            // Cap delta time to prevent large jumps (e.g., when tab was inactive)
+            const cappedDeltaTime = Math.min(deltaTime, 1/30); // Max 30 FPS equivalent
+
+            // Draw background image if loaded, else fallback to color
+            if (bgLoaded) {
+                ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
+            } else {
+                ctx.fillStyle = '#87CEEB'; // fallback color
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            // Update game objects with delta time
+            updateDifficulty(currentTime);
+            updatePlayer(cappedDeltaTime);
+            updateTacos(cappedDeltaTime, currentTime);
+
+            // Draw everything
+            drawLives();
+            drawPlayer();
+            tacos.forEach(drawTaco);
+
+            // Continue game loop
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the game loop
+        gameLoop(0);
+
+        // Leaderboard logic with Firebase integration
+        const leaderboardOverlay = document.getElementById('leaderboardOverlay');
+        const leaderboardList = document.getElementById('leaderboardList');
+
+        let leaderboard = JSON.parse(localStorage.getItem('tacoLeaderboard') || '[]');
+        const LEADERBOARD_SIZE = 1000;
+        const DISPLAY_SIZE = 10;
+        let playerScoreIndex = -1;
+
+        // Total tacos consumed tracking
+        let totalTacosConsumed = parseInt(localStorage.getItem('totalTacosConsumed') || '0');
+        
+        // Update display on page load
+        function updateTacoCounterDisplay() {
+            const totalTacosElement = document.getElementById('totalTacos');
+            if (totalTacosElement) {
+                totalTacosElement.textContent = `Total Tacos Consumed: ${totalTacosConsumed.toLocaleString()}`;
+            }
+        }
+        
+        // Initialize display
+        updateTacoCounterDisplay();
+
+        // Firebase functions
+        async function saveToFirebase(name, score) {
+            if (!firebaseInitialized || !firebaseDB) return false;
+            try {
+                await firebaseDB.collection('leaderboard').add({
+                    name: name,
+                    score: score,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    date: new Date().toISOString()
+                });
+                return true;
+            } catch (error) {
+                console.error('Firebase save failed:', error);
+                return false;
+            }
+        }
+
+        async function saveTotalTacosToFirebase() {
+            if (!firebaseInitialized || !firebaseDB) return false;
+            try {
+                // Use a document ID based on a simple identifier (could be enhanced with user auth later)
+                const userDocId = 'player_' + (localStorage.getItem('playerId') || generatePlayerId());
+                await firebaseDB.collection('playerStats').doc(userDocId).set({
+                    totalTacosConsumed: totalTacosConsumed,
+                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+                return true;
+            } catch (error) {
+                console.error('Firebase taco total save failed:', error);
+                return false;
+            }
+        }
+
+        function generatePlayerId() {
+            const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('playerId', id);
+            return id;
+        }
+
+        async function loadFromFirebase() {
+            if (!firebaseInitialized || !firebaseDB) return [];
+            try {
+                const snapshot = await firebaseDB.collection('leaderboard')
+                    .orderBy('score', 'desc').limit(1000).get();
+                const scores = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    scores.push({name: data.name, score: data.score, date: data.date});
+                });
+                return scores;
+            } catch (error) {
+                console.error('Firebase load failed:', error);
+                return [];
+            }
+        }
+
+        // Enhanced show leaderboard with Firebase
+        async function showLeaderboard(finalScore) {
+            if (musicEnabled) {
+                startMenuMusic();
+            }
+            
+            // Always save locally first
+            leaderboard.push({name: '____', score: finalScore, isNew: true});
+            leaderboard.sort((a, b) => b.score - a.score);
+            if (leaderboard.length > LEADERBOARD_SIZE) {
+                leaderboard = leaderboard.slice(0, LEADERBOARD_SIZE);
+            }
+            playerScoreIndex = leaderboard.findIndex(entry => entry.isNew);
+            
+            // Try to load global scores
+            const globalScores = await loadFromFirebase();
+            const useGlobal = globalScores.length > 0;
+            
+            // Use global if available, otherwise local
+            const displayBoard = useGlobal ? 
+                [...globalScores, {name: '____', score: finalScore, isNew: true}].sort((a, b) => b.score - a.score) :
+                leaderboard;
+            
+            const displayIndex = displayBoard.findIndex(entry => entry.isNew);
+            
+            // Calculate display window (4 above, player, 5 below)
+            let start = Math.max(0, displayIndex - 4);
+            let end = Math.min(displayBoard.length, start + DISPLAY_SIZE);
+            if (end - start < DISPLAY_SIZE) {
+                start = Math.max(0, end - DISPLAY_SIZE);
+            }
+            
+            const displayScores = displayBoard.slice(start, end);
+            const rank = displayIndex + 1;
+
+            // Display leaderboard
+            const title = useGlobal ? '🌐 GLOBAL HIGH SCORES 🌐' : '🏆 HIGH SCORES 🏆';
+            leaderboardList.innerHTML = `<h3 style="margin-top:0; color:#FFD700; text-align:center;">${title}</h3>`;
+            
+            if (displayIndex !== -1) {
+                const rankText = useGlobal ? 'Global Rank' : 'Rank';
+                leaderboardList.innerHTML += `<p style="color:#FFD700; text-align:center; margin:10px 0; font-size:18px;">Your ${rankText}: #${rank} of ${displayBoard.length}</p>`;
+            }
+            
+            if (start > 0) {
+                leaderboardList.innerHTML += `<div style="color:#888; text-align:center; margin:8px 0;">... ${start} higher scores ...</div>`;
+            }
+            
+            displayScores.forEach((entry, i) => {
+                const actualRank = start + i + 1;
+                const medal = actualRank === 1 ? '🥇' : actualRank === 2 ? '🥈' : actualRank === 3 ? '🥉' : `#${actualRank}`;
+                
+                if (entry.isNew) {
+                    leaderboardList.innerHTML += `
+                        <li style="color:#FFD700; font-weight:bold; background:rgba(255,215,0,0.2); padding:12px; margin:6px 0; border-radius:6px; border:2px solid #FFD700; list-style:none;">
+                            ${medal} <input type="text" maxlength="8" placeholder="Enter Name" 
+                            style="width:120px; text-align:center; font-size:18px; padding:6px; border:2px solid #FFD700; border-radius:4px; background:#333; color:#FFD700; font-weight:bold;" 
+                            id="nameInput" autofocus /> - ${entry.score} points
+                            <br><button id="submitNameBtn" style="font-size:16px; padding:8px 16px; background:#4CAF50; color:#fff; border:none; border-radius:4px; cursor:pointer; margin-top:8px; transition:background 0.2s;" onmouseover="this.style.background='#45a049'" onmouseout="this.style.background='#4CAF50'">
+                                Submit Score
+                            </button>
+                        </li>`;
+                } else {
+                    const entryColor = actualRank <= 3 ? '#FFD700' : '#fff';
+                    const dateStr = entry.date ? new Date(entry.date).toLocaleDateString() : '';
+                    const dateDisplay = dateStr && useGlobal ? ` <span style="color:#888; font-size:14px;">(${dateStr})</span>` : '';
+                    leaderboardList.innerHTML += `
+                        <li style="color:${entryColor}; padding:8px; margin:4px 0; border-radius:4px; list-style:none;">
+                            ${medal} ${entry.name} - ${entry.score} points${dateDisplay}
+                        </li>`;
+                }
+            });
+            
+            if (end < displayBoard.length) {
+                leaderboardList.innerHTML += `<div style="color:#888; text-align:center; margin:8px 0;">... ${displayBoard.length - end} lower scores ...</div>`;
+            }
+
+            leaderboardOverlay.style.display = 'flex';
+
+            // Handle name input
+            if (displayIndex !== -1) {
+                setTimeout(() => {
+                    const nameInput = document.getElementById('nameInput');
+                    const submitBtn = document.getElementById('submitNameBtn');
+                    let isSubmitting = false; // Prevent multiple submissions
+                    
+                    if (nameInput && submitBtn) {
+                        nameInput.focus();
+                        
+                        const submitScore = async () => {
+                            if (isSubmitting) return; // Prevent multiple submissions
+                            isSubmitting = true;
+                            
+                            // Disable the button and show submitting state
+                            submitBtn.disabled = true;
+                            submitBtn.textContent = 'Submitting...';
+                            submitBtn.style.background = '#666';
+                            
+                            const playerName = nameInput.value.trim() || 'Anonymous';
+                            
+                            // Always save locally
+                            leaderboard[playerScoreIndex] = {name: playerName, score: finalScore};
+                            localStorage.setItem('tacoLeaderboard', JSON.stringify(leaderboard));
+                            
+                            // Try Firebase for both score and taco total
+                            const firebaseSaved = await saveToFirebase(playerName, finalScore);
+                            await saveTotalTacosToFirebase(); // Sync total tacos to Firebase
+                            
+                            // Return to menu instead of showing final leaderboard
+                            resetToMenu();
+                        };
+                        
+                        // Submit button click event
+                        submitBtn.addEventListener('click', submitScore);
+                        
+                        // Optional: Still allow Enter key but with same protection
+                        nameInput.addEventListener('keydown', function(e) {
+                            if (e.key === 'Enter' && !isSubmitting) {
+                                submitScore();
+                            }
+                        });
+                        
+                        // Auto-submit after 60 seconds
+                        setTimeout(() => {
+                            if (document.getElementById('nameInput') && !isSubmitting) {
+                                submitScore();
+                            }
+                        }, 60000);
+                    }
+                }, 100);
+            } else {
+                const minScore = displayBoard.length > 0 ? displayBoard[displayBoard.length - 1]?.score || 0 : 0;
+                leaderboardList.innerHTML += `
+                    <div style="color:#ccc; text-align:center; margin-top:20px; padding:16px; background:rgba(0,0,0,0.3); border-radius:8px;">
+                        <p style="font-size:20px; color:#FFD700;">Your Score: ${finalScore} points</p>
+                        <p>You need ${minScore + 1} points to make the ${useGlobal ? 'global ' : ''}leaderboard!</p>
+                        <p>Keep trying!</p>
+                    </div>`;
+                setTimeout(() => resetToMenu(), 4000);
+            }
+        }
+
+        function displayFinalLeaderboard(playerName, playerScore, playerRank, firebaseSaved, useGlobal) {
+            const statusMsg = firebaseSaved ? 
+                '<p style="color:#4CAF50; text-align:center; font-size:14px;">✅ Saved globally!</p>' :
+                '<p style="color:#FF9800; text-align:center; font-size:14px;">⚠️ Saved locally only</p>';
+            
+            const title = useGlobal ? '🌐 GLOBAL HIGH SCORES 🌐' : '🏆 HIGH SCORES 🏆';
+            const rankText = useGlobal ? 'Global Rank' : 'Rank';
+            
+            leaderboardList.innerHTML = `<h3 style="margin-top:0; color:#FFD700; text-align:center;">${title}</h3>`;
+            leaderboardList.innerHTML += statusMsg;
+            leaderboardList.innerHTML += `<p style="color:#FFD700; text-align:center; margin:10px 0;">Your ${rankText}: #${playerRank}</p>`;
+            
+            leaderboardList.innerHTML += `
+                <div style="text-align:center; margin-top:20px;">
+                    <button onclick="resetToMenu()" style="font-size:18px; padding:12px 24px; background:#8a0083; color:#fff; border:none; border-radius:8px; cursor:pointer; transition:background 0.2s;" onmouseover="this.style.background='#00728f'" onmouseout="this.style.background='#8a0083'">
+                        Play Again
+                    </button>
+                </div>`;
+        }
+
+        function resetToMenu() {
+            leaderboardOverlay.style.display = 'none';
+            startMenu.style.display = 'flex';
+            canvas.style.display = 'none';
+            scoreElement.style.display = 'none';
+            document.getElementById('instructions').style.display = 'none';
+            gameContainer.classList.remove('game-active');
+            score = 0;
+            lives = 10;
+            tacos = [];
+            scoreElement.textContent = 'Score: 0';
+            gameRunning = false;
+            
+            // Update taco counter display when returning to menu
+            updateTacoCounterDisplay();
+            
+            if (musicEnabled) {
+                startMenuMusic();
+            }
+        }
+
+        async function viewFullLeaderboard() {
+            if (musicEnabled) {
+                startMenuMusic();
+            }
+            
+            leaderboardList.innerHTML = '<h3 style="margin-top:0; color:#FFD700; text-align:center;">🌐 LOADING... 🌐</h3>';
+            leaderboardOverlay.style.display = 'flex';
+            
+            const globalScores = await loadFromFirebase();
+            const useGlobal = globalScores.length > 0;
+            const currentLeaderboard = useGlobal ? globalScores : JSON.parse(localStorage.getItem('tacoLeaderboard') || '[]');
+            
+            const title = useGlobal ? '🌐 GLOBAL HIGH SCORES 🌐' : '🏆 LOCAL HIGH SCORES 🏆';
+            leaderboardList.innerHTML = `<h3 style="margin-top:0; color:#FFD700; text-align:center;">${title}</h3>`;
+            
+            if (currentLeaderboard.length === 0) {
+                leaderboardList.innerHTML += '<div style="color:#ccc; text-align:center; padding:20px;">No scores yet!<br>Be the first to play!</div>';
+            } else {
+                const playerText = useGlobal ? 'Global Players' : 'Local Players';
+                leaderboardList.innerHTML += `<p style="color:#FFD700; text-align:center; margin:10px 0;">Total ${playerText}: ${currentLeaderboard.length}</p>`;
+                
+                if (!useGlobal) {
+                    leaderboardList.innerHTML += `<p style="color:#888; text-align:center; margin:10px 0; font-size:14px;">(Global scores unavailable)</p>`;
+                }
+                
+                currentLeaderboard.forEach((entry, i) => {
+                    const rank = i + 1;
+                    const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
+                    const entryColor = rank <= 3 ? '#FFD700' : '#fff';
+                    const bgColor = rank <= 3 ? 'background:rgba(255,215,0,0.1);' : '';
+                    
+                    const dateStr = entry.date && useGlobal ? new Date(entry.date).toLocaleDateString() : '';
+                    const dateDisplay = dateStr ? `<span style="color:#888; font-size:12px; display:block;">${dateStr}</span>` : '';
+                    
+                    leaderboardList.innerHTML += `
+                        <div style="color:${entryColor}; padding:12px; margin:6px 0; border-radius:6px; ${bgColor} display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <span>${medal} ${entry.name}</span>
+                                ${dateDisplay}
+                            </div>
+                            <span style="font-weight:bold;">${entry.score} points</span>
+                        </div>`;
+                });
+            }
+        }
+
+        // Close leaderboard
+        const closeLeaderboardBtn = document.getElementById('closeLeaderboardBtn');
+        closeLeaderboardBtn.onclick = function() {
+            resetToMenu();
+        };
+    </script>
+</body>
+</html>
