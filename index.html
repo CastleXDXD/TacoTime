@@ -181,7 +181,20 @@
         </div>
     </div>
     <div id="score">Score: 0</div>
-    <div id="instructions">Catch the Tacos, You have 10 Lives!<br>Use A/D keys or Left/Right arrows to move!</div>
+    <div id="instructions">Catch the Tacos, You have 10 Lives!<br>Use A/D keys, Left/Right arrows, or touch left/right half of screen to move!<br>ESC or P to toggle pause</div>
+
+    <!-- Add pause menu overlay -->
+    <div id="pauseOverlay" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); z-index:25; flex-direction:column; align-items:center; justify-content:center;">
+        <div style="background:#222; padding:40px; border-radius:16px; box-shadow:0 4px 24px #000; display:flex; flex-direction:column; align-items:center; border:4px solid #8a0083;">
+            <h2 style="color:#FFD700; margin-bottom:30px; font-size:32px;">PAUSED</h2>
+            <button id="pauseMusicBtn" style="font-size:20px; padding:15px 30px; margin:10px; background:#8a0083; color:#fff; border:none; border-radius:8px; cursor:pointer; transition:background 0.2s; width:200px;" onmouseover="this.style.background='#00728f'" onmouseout="this.style.background='#8a0083'">
+                Music: On
+            </button>
+            <button id="pauseSfxBtn" style="font-size:20px; padding:15px 30px; margin:10px; background:#8a0083; color:#fff; border:none; border-radius:8px; cursor:pointer; transition:background 0.2s; width:200px;" onmouseover="this.style.background='#00728f'" onmouseout="this.style.background='#8a0083'">
+                SFX: On
+            </button>
+        </div>
+    </div>
 
     <!-- Add leaderboard overlay div -->
     <div id="leaderboardOverlay" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(60,60,60,0.95); z-index:30; flex-direction:column; align-items:center; justify-content:center;">
@@ -191,7 +204,7 @@
                 <!-- Scrollable leaderboard content goes here -->
             </div>
             <button id="closeLeaderboardBtn" style="font-size:18px; padding:12px 24px; background:#8a0083; color:#fff; border:none; border-radius:8px; cursor:pointer; transition:background 0.2s;" onmouseover="this.style.background='#00728f'" onmouseout="this.style.background='#8a0083'">
-                Close
+                Close<br><span style="font-size:12px;">(remain anonymous)</span>
             </button>
         </div>
     </div>
@@ -229,15 +242,50 @@
         const scoreElement = document.getElementById('score');
         const gameContainer = document.querySelector('.game-container');
 
+        // Responsive canvas scaling
+        function resizeCanvas() {
+            const maxWidth = window.innerWidth - 40;
+            const maxHeight = window.innerHeight - 200;
+            const aspectRatio = 800 / 600;
+            
+            let newWidth = Math.min(800, maxWidth);
+            let newHeight = newWidth / aspectRatio;
+            
+            if (newHeight > maxHeight) {
+                newHeight = maxHeight;
+                newWidth = newHeight * aspectRatio;
+            }
+            
+            canvas.style.width = newWidth + 'px';
+            canvas.style.height = newHeight + 'px';
+            
+            // Update start menu size to match canvas
+            const startMenu = document.getElementById('startMenu');
+            startMenu.style.width = newWidth + 'px';
+            startMenu.style.height = newHeight + 'px';
+        }
+
+        // Initialize canvas size
+        resizeCanvas();
+        
+        // Resize on window resize
+        window.addEventListener('resize', resizeCanvas);
+
         // Game state
         let score = 0;
         let gameRunning = true;
+        let gamePaused = false; // Add pause state
         let difficultyTimer = 0;
-        let baseTacoSpeed = 3;
-        let basePlayerSpeed = 8;
+        let baseTacoSpeed = 360; // pixels per second (doubled from 180)
+        let basePlayerSpeed = 960; // pixels per second (doubled from 480)
         let difficultyMultiplier = 1;
-        let lastDifficultyIncrease = 0;
+        let lastDifficultyTime = 0;
         let lives = 10;
+        let lastTime = 0;
+
+        // Touch controls
+        let touchingLeft = false;
+        let touchingRight = false;
 
         // Player (head)
         const player = {
@@ -250,8 +298,8 @@
 
         // Tacos array
         let tacos = [];
-        let tacoSpawnTimer = 0;
-        const tacoSpawnRate = 90; // frames between spawns
+        let lastTacoSpawn = 0;
+        const tacoSpawnRate = 1.5; // seconds between spawns (was 90 frames at 60fps = 1.5s)
 
         // Audio system
         const audio1 = new Audio();
@@ -403,10 +451,19 @@
             introAudio.currentTime = 0;
         }
 
-        // Input handling
+        // Input handling - Updated to toggle pause
         const keys = {};
         document.addEventListener('keydown', (e) => {
             keys[e.key.toLowerCase()] = true;
+            
+            // Handle pause/unpause toggle (P or Escape)
+            if ((e.key.toLowerCase() === 'p' || e.key === 'Escape') && gameRunning) {
+                if (gamePaused) {
+                    resumeGame();
+                } else {
+                    pauseGame();
+                }
+            }
         });
         document.addEventListener('keyup', (e) => {
             keys[e.key.toLowerCase()] = false;
@@ -537,7 +594,8 @@
         function createTaco() {
             const totalRotations = 1 + Math.random(); // 1 to 2 rotations
             const fallDistance = canvas.height + 60; // Total distance taco will fall
-            const speed = (baseTacoSpeed + Math.random() * 2) * difficultyMultiplier;
+            const speed = (baseTacoSpeed + Math.random() * 120) * difficultyMultiplier; // pixels per second
+            const fallTime = fallDistance / speed; // time to fall in seconds
             
             return {
                 x: Math.random() * (canvas.width - 50),
@@ -546,18 +604,18 @@
                 height: 50,
                 speed: speed,
                 rotation: 0,
-                rotationSpeed: (totalRotations * 2 * Math.PI) / (fallDistance / speed) // Calculate rotation speed for desired total rotations
+                rotationSpeed: (totalRotations * 2 * Math.PI) / fallTime // radians per second
             };
         }
 
         // Update difficulty every 30 seconds
-        function updateDifficulty() {
-            difficultyTimer++;
-            // 60 fps * 30 seconds = 1800 frames
-            if (difficultyTimer >= 1800 && difficultyTimer !== lastDifficultyIncrease) {
+        function updateDifficulty(currentTime) {
+            if (gamePaused) return; // Don't update when paused
+            
+            // Check if 30 seconds have passed since last difficulty increase
+            if (currentTime - lastDifficultyTime >= 30000) { // 30 seconds in milliseconds
                 difficultyMultiplier *= 1.1; // Increase by 10%
-                lastDifficultyIncrease = difficultyTimer;
-                difficultyTimer = 0; // Reset timer for next increase
+                lastDifficultyTime = currentTime;
                 console.log('Difficulty increased! Speed multiplier: ' + difficultyMultiplier.toFixed(2));
                 
                 // Play speed increase sound effect
@@ -566,30 +624,79 @@
         }
 
         // Update player position
-        function updatePlayer() {
-            const currentSpeed = basePlayerSpeed * difficultyMultiplier;
-            if ((keys['a'] || keys['arrowleft']) && player.x > 0) {
+        function updatePlayer(deltaTime) {
+            if (gamePaused) return; // Don't update when paused
+            
+            const currentSpeed = basePlayerSpeed * difficultyMultiplier * deltaTime;
+            
+            // Check keyboard input or touch input
+            const movingLeft = (keys['a'] || keys['arrowleft'] || touchingLeft) && player.x > 0;
+            const movingRight = (keys['d'] || keys['arrowright'] || touchingRight) && player.x < canvas.width - player.width;
+            
+            if (movingLeft) {
                 player.x -= currentSpeed;
             }
-            if ((keys['d'] || keys['arrowright']) && player.x < canvas.width - player.width) {
+            if (movingRight) {
                 player.x += currentSpeed;
             }
         }
 
+        // Pause game functions
+        const pauseOverlay = document.getElementById('pauseOverlay');
+        const pauseMusicBtn = document.getElementById('pauseMusicBtn');
+        const pauseSfxBtn = document.getElementById('pauseSfxBtn');
+
+        function pauseGame() {
+            gamePaused = true;
+            pauseOverlay.style.display = 'flex';
+            
+            // Update pause menu button states to match current settings
+            pauseMusicBtn.textContent = musicEnabled ? 'Music: On' : 'Music: Off';
+            pauseSfxBtn.textContent = sfxEnabled ? 'SFX: On' : 'SFX: Off';
+        }
+
+        function resumeGame() {
+            gamePaused = false;
+            pauseOverlay.style.display = 'none';
+        }
+
+        // Pause menu button events
+        pauseMusicBtn.onclick = function() {
+            musicEnabled = !musicEnabled;
+            
+            if (!musicEnabled) {
+                stopAllMusic();
+            } else {
+                startGameMusic();
+            }
+            
+            pauseMusicBtn.textContent = musicEnabled ? 'Music: On' : 'Music: Off';
+            // Also update main menu music button to stay in sync
+            musicBtn.textContent = musicEnabled ? 'Music: On' : 'Music: Off';
+        };
+
+        pauseSfxBtn.onclick = function() {
+            sfxEnabled = !sfxEnabled;
+            pauseSfxBtn.textContent = sfxEnabled ? 'SFX: On' : 'SFX: Off';
+            // Also update main menu SFX button to stay in sync
+            sfxBtn.textContent = sfxEnabled ? 'SFX: On' : 'SFX: Off';
+        };
+
         // Update tacos
-        function updateTacos() {
-            // Spawn new tacos
-            tacoSpawnTimer++;
-            if (tacoSpawnTimer >= tacoSpawnRate) {
+        function updateTacos(deltaTime, currentTime) {
+            if (gamePaused) return; // Don't update when paused
+            
+            // Spawn new tacos based on time
+            if (currentTime - lastTacoSpawn >= tacoSpawnRate * 1000) { // convert seconds to milliseconds
                 tacos.push(createTaco());
-                tacoSpawnTimer = 0;
+                lastTacoSpawn = currentTime;
             }
 
             // Move tacos and check for collisions
             for (let i = tacos.length - 1; i >= 0; i--) {
                 const taco = tacos[i];
-                taco.y += taco.speed;
-                taco.rotation += taco.rotationSpeed; // Update rotation
+                taco.y += taco.speed * deltaTime;
+                taco.rotation += taco.rotationSpeed * deltaTime; // Update rotation
 
                 // Check collision with player
                 if (taco.x < player.x + player.width &&
@@ -640,6 +747,7 @@
         startBtn.onclick = function() {
             startMenu.style.display = 'none';
             leaderboardOverlay.style.display = 'none';
+            pauseOverlay.style.display = 'none'; // Hide pause menu if visible
             canvas.style.display = '';
             scoreElement.style.display = '';
             document.getElementById('instructions').style.display = '';
@@ -648,11 +756,14 @@
             lives = 10; // Reset lives
             tacos = []; // Clear tacos
             gameRunning = true;
-            difficultyTimer = 0; // Reset difficulty timer
+            gamePaused = false; // Reset pause state
+            lastTime = 0; // Reset delta time
+            lastTacoSpawn = 0; // Reset spawn timer
+            lastDifficultyTime = 0; // Reset difficulty timer
             difficultyMultiplier = 1; // Reset difficulty
             stopAllMusic(); // Stop menu music
             startGameMusic(); // Start the game music loop
-            gameLoop();
+            gameLoop(0); // Start with timestamp 0
         };
 
         // Music button event
@@ -687,9 +798,22 @@
         // Prevent game from running until started
         gameRunning = false;
 
-        // Main game loop
-        function gameLoop() {
+        // Main game loop - Updated to use delta time
+        function gameLoop(currentTime) {
             if (!gameRunning) return;
+            
+            // Calculate delta time in seconds
+            const deltaTime = lastTime === 0 ? 0 : (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+            
+            // Skip first frame to avoid large delta
+            if (deltaTime === 0) {
+                requestAnimationFrame(gameLoop);
+                return;
+            }
+            
+            // Cap delta time to prevent large jumps (e.g., when tab was inactive)
+            const cappedDeltaTime = Math.min(deltaTime, 1/30); // Max 30 FPS equivalent
 
             // Draw background image if loaded, else fallback to color
             if (bgLoaded) {
@@ -699,10 +823,10 @@
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
             }
 
-            // Update game objects
-            updateDifficulty();
-            updatePlayer();
-            updateTacos();
+            // Update game objects with delta time
+            updateDifficulty(currentTime);
+            updatePlayer(cappedDeltaTime);
+            updateTacos(cappedDeltaTime, currentTime);
 
             // Draw everything
             drawLives();
@@ -713,8 +837,8 @@
             requestAnimationFrame(gameLoop);
         }
 
-        // Start the game
-        gameLoop();
+        // Start the game loop
+        gameLoop(0);
 
         // Leaderboard logic with Firebase integration
         const leaderboardOverlay = document.getElementById('leaderboardOverlay');
@@ -831,7 +955,7 @@
             const rank = displayIndex + 1;
 
             // Display leaderboard
-            const title = useGlobal ? '🌍 GLOBAL HIGH SCORES 🌍' : '🏆 HIGH SCORES 🏆';
+            const title = useGlobal ? '🌐 GLOBAL HIGH SCORES 🌐' : '🏆 HIGH SCORES 🏆';
             leaderboardList.innerHTML = `<h3 style="margin-top:0; color:#FFD700; text-align:center;">${title}</h3>`;
             
             if (displayIndex !== -1) {
@@ -853,6 +977,9 @@
                             ${medal} <input type="text" maxlength="8" placeholder="Enter Name" 
                             style="width:120px; text-align:center; font-size:18px; padding:6px; border:2px solid #FFD700; border-radius:4px; background:#333; color:#FFD700; font-weight:bold;" 
                             id="nameInput" autofocus /> - ${entry.score} points
+                            <br><button id="submitNameBtn" style="font-size:16px; padding:8px 16px; background:#4CAF50; color:#fff; border:none; border-radius:4px; cursor:pointer; margin-top:8px; transition:background 0.2s;" onmouseover="this.style.background='#45a049'" onmouseout="this.style.background='#4CAF50'">
+                                Submit Score
+                            </button>
                         </li>`;
                 } else {
                     const entryColor = actualRank <= 3 ? '#FFD700' : '#fff';
@@ -875,10 +1002,21 @@
             if (displayIndex !== -1) {
                 setTimeout(() => {
                     const nameInput = document.getElementById('nameInput');
-                    if (nameInput) {
+                    const submitBtn = document.getElementById('submitNameBtn');
+                    let isSubmitting = false; // Prevent multiple submissions
+                    
+                    if (nameInput && submitBtn) {
                         nameInput.focus();
                         
                         const submitScore = async () => {
+                            if (isSubmitting) return; // Prevent multiple submissions
+                            isSubmitting = true;
+                            
+                            // Disable the button and show submitting state
+                            submitBtn.disabled = true;
+                            submitBtn.textContent = 'Submitting...';
+                            submitBtn.style.background = '#666';
+                            
                             const playerName = nameInput.value.trim() || 'Anonymous';
                             
                             // Always save locally
@@ -889,17 +1027,23 @@
                             const firebaseSaved = await saveToFirebase(playerName, finalScore);
                             await saveTotalTacosToFirebase(); // Sync total tacos to Firebase
                             
-                            displayFinalLeaderboard(playerName, finalScore, rank, firebaseSaved, useGlobal);
+                            // Return to menu instead of showing final leaderboard
+                            resetToMenu();
                         };
                         
+                        // Submit button click event
+                        submitBtn.addEventListener('click', submitScore);
+                        
+                        // Optional: Still allow Enter key but with same protection
                         nameInput.addEventListener('keydown', function(e) {
-                            if (e.key === 'Enter') {
+                            if (e.key === 'Enter' && !isSubmitting) {
                                 submitScore();
                             }
                         });
                         
+                        // Auto-submit after 60 seconds
                         setTimeout(() => {
-                            if (document.getElementById('nameInput')) {
+                            if (document.getElementById('nameInput') && !isSubmitting) {
                                 submitScore();
                             }
                         }, 60000);
@@ -922,7 +1066,7 @@
                 '<p style="color:#4CAF50; text-align:center; font-size:14px;">✅ Saved globally!</p>' :
                 '<p style="color:#FF9800; text-align:center; font-size:14px;">⚠️ Saved locally only</p>';
             
-            const title = useGlobal ? '🌍 GLOBAL HIGH SCORES 🌍' : '🏆 HIGH SCORES 🏆';
+            const title = useGlobal ? '🌐 GLOBAL HIGH SCORES 🌐' : '🏆 HIGH SCORES 🏆';
             const rankText = useGlobal ? 'Global Rank' : 'Rank';
             
             leaderboardList.innerHTML = `<h3 style="margin-top:0; color:#FFD700; text-align:center;">${title}</h3>`;
@@ -963,14 +1107,14 @@
                 startMenuMusic();
             }
             
-            leaderboardList.innerHTML = '<h3 style="margin-top:0; color:#FFD700; text-align:center;">🌍 LOADING... 🌍</h3>';
+            leaderboardList.innerHTML = '<h3 style="margin-top:0; color:#FFD700; text-align:center;">🌐 LOADING... 🌐</h3>';
             leaderboardOverlay.style.display = 'flex';
             
             const globalScores = await loadFromFirebase();
             const useGlobal = globalScores.length > 0;
             const currentLeaderboard = useGlobal ? globalScores : JSON.parse(localStorage.getItem('tacoLeaderboard') || '[]');
             
-            const title = useGlobal ? '🌍 GLOBAL HIGH SCORES 🌍' : '🏆 LOCAL HIGH SCORES 🏆';
+            const title = useGlobal ? '🌐 GLOBAL HIGH SCORES 🌐' : '🏆 LOCAL HIGH SCORES 🏆';
             leaderboardList.innerHTML = `<h3 style="margin-top:0; color:#FFD700; text-align:center;">${title}</h3>`;
             
             if (currentLeaderboard.length === 0) {
