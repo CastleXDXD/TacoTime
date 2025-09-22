@@ -164,6 +164,29 @@
             transition: background 0.2s;
             margin-top: 10px;
         }
+
+        /* Touch controls styles */
+        #touchControls {
+            display: none;
+            width: 800px;
+            margin: 20px auto;
+            justify-content: space-between;
+        }
+
+        #touchControls button {
+            width: 80px;
+            height: 80px;
+            background: none;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        #touchControls svg {
+            width: 80px;
+            height: 80px;
+        }
     </style>
 </head>
 <body>
@@ -181,7 +204,7 @@
         </div>
     </div>
     <div id="score">Score: 0</div>
-    <div id="instructions">Catch the Tacos, You have 10 Lives!<br>Use A/D keys, Left/Right arrows, or touch left/right half of screen to move!<br>ESC or P to toggle pause</div>
+    <div id="instructions">Catch the Tacos, You have 10 Lives!<br>Use A/D keys, Left/Right arrows, or use triangles to move!<br>ESC or P to toggle pause</div>
 
     <!-- Add pause menu overlay -->
     <div id="pauseOverlay" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); z-index:25; flex-direction:column; align-items:center; justify-content:center;">
@@ -207,6 +230,20 @@
                 Close<br><span style="font-size:12px;">(remain anonymous)</span>
             </button>
         </div>
+    </div>
+
+    <!-- Add this right after the game-container div -->
+    <div id="touchControls" style="display: none; width: 800px; margin: 20px auto; justify-content: space-between;">
+        <button id="leftBtn" style="width: 80px; height: 80px; background: none; border: none; outline: none; cursor: pointer; padding: 0;">
+            <svg width="80" height="80" viewBox="0 0 80 80">
+                <polygon points="60,10 20,40 60,70" fill="#8a0083" stroke="#fff" stroke-width="4"/>
+            </svg>
+        </button>
+        <button id="rightBtn" style="width: 80px; height: 80px; background: none; border: none; outline: none; cursor: pointer; padding: 0;">
+            <svg width="80" height="80" viewBox="0 0 80 80">
+                <polygon points="20,10 60,40 20,70" fill="#8a0083" stroke="#fff" stroke-width="4"/>
+            </svg>
+        </button>
     </div>
 
     <script>
@@ -1154,32 +1191,99 @@
             resetToMenu();
         };
 
-        // Touch controls for mobile
-        canvas.addEventListener('touchstart', function(e) {
-            if (!gameRunning || gamePaused) return;
-            const rect = canvas.getBoundingClientRect();
-            for (let i = 0; i < e.touches.length; i++) {
-                const x = e.touches[i].clientX - rect.left;
-                if (x < canvas.width / 2) {
-                    touchingLeft = true;
-                } else {
-                    touchingRight = true;
-                }
+        // Add this after game initialization, before the game loop
+
+        const touchControls = document.getElementById('touchControls');
+        const leftBtn = document.getElementById('leftBtn');
+        const rightBtn = document.getElementById('rightBtn');
+
+        // Update touch controls visibility
+        function updateTouchControlsVisibility() {
+            touchControls.style.display = canvas.style.display !== 'none' ? 'flex' : 'none';
+        }
+
+        // Add to existing startBtn.onclick
+        const originalStartBtnOnClick = startBtn.onclick;
+        startBtn.onclick = function() {
+            originalStartBtnOnClick.call(this);
+            updateTouchControlsVisibility();
+        };
+
+        // Add to existing resetToMenu function
+        const originalResetToMenu = window.resetToMenu;
+        window.resetToMenu = function() {
+            if (originalResetToMenu) {
+                originalResetToMenu.call(this);
             }
-            e.preventDefault();
-        }, { passive: false });
+            updateTouchControlsVisibility();
+        }
 
-        canvas.addEventListener('touchend', function(e) {
-            touchingLeft = false;
+        // Left button events
+        leftBtn.addEventListener('touchstart', function(e) {
+            if (!gameRunning || gamePaused) return;
+            touchingLeft = true;
             touchingRight = false;
             e.preventDefault();
         }, { passive: false });
 
-        canvas.addEventListener('touchcancel', function(e) {
+        leftBtn.addEventListener('touchend', function(e) {
             touchingLeft = false;
+            e.preventDefault();
+        }, { passive: false });
+
+        leftBtn.addEventListener('mousedown', function() {
+            if (!gameRunning || gamePaused) return;
+            touchingLeft = true;
+            touchingRight = false;
+        });
+
+        leftBtn.addEventListener('mouseup', function() {
+            touchingLeft = false;
+        });
+
+        leftBtn.addEventListener('mouseleave', function() {
+            touchingLeft = false;
+        });
+
+        // Right button events
+        rightBtn.addEventListener('touchstart', function(e) {
+            if (!gameRunning || gamePaused) return;
+            touchingRight = true;
+            touchingLeft = false;
+            e.preventDefault();
+        }, { passive: false });
+
+        rightBtn.addEventListener('touchend', function(e) {
             touchingRight = false;
             e.preventDefault();
         }, { passive: false });
+
+        rightBtn.addEventListener('mousedown', function() {
+            if (!gameRunning || gamePaused) return;
+            touchingRight = true;
+            touchingLeft = false;
+        });
+
+        rightBtn.addEventListener('mouseup', function() {
+            touchingRight = false;
+        });
+
+        rightBtn.addEventListener('mouseleave', function() {
+            touchingRight = false;
+        });
+
+        // Make sure buttons don't get stuck in pressed state when game pauses
+        function clearTouchStates() {
+            touchingLeft = false;
+            touchingRight = false;
+        }
+
+        // Add to existing pauseGame function
+        const originalPauseGame = pauseGame;
+        function pauseGame() {
+            originalPauseGame.call(this);
+            clearTouchStates();
+        }
     </script>
 </body>
 </html>
