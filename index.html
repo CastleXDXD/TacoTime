@@ -168,14 +168,17 @@
         /* Touch controls styles */
         #touchControls {
             display: none;
-            width: 800px;
+            width: 100%;
+            max-width: 800px;
             margin: 20px auto;
             justify-content: space-between;
+            padding: 0 20px;
+            box-sizing: border-box;
         }
 
         #touchControls button {
-            width: 80px;
-            height: 80px;
+            width: 60px;
+            height: 60px;
             background: none;
             border: none;
             outline: none;
@@ -184,8 +187,19 @@
         }
 
         #touchControls svg {
-            width: 80px;
-            height: 80px;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Add media query for smaller screens */
+        @media (max-width: 600px) {
+            #touchControls {
+                padding: 0 10px;
+            }
+            #touchControls button {
+                width: 50px;
+                height: 50px;
+            }
         }
     </style>
 </head>
@@ -233,14 +247,14 @@
     </div>
 
     <!-- Add this right after the game-container div -->
-    <div id="touchControls" style="display: none; width: 800px; margin: 20px auto; justify-content: space-between;">
-        <button id="leftBtn" style="width: 80px; height: 80px; background: none; border: none; outline: none; cursor: pointer; padding: 0;">
-            <svg width="80" height="80" viewBox="0 0 80 80">
+    <div id="touchControls">
+        <button id="leftBtn">
+            <svg viewBox="0 0 80 80">
                 <polygon points="60,10 20,40 60,70" fill="#8a0083" stroke="#fff" stroke-width="4"/>
             </svg>
         </button>
-        <button id="rightBtn" style="width: 80px; height: 80px; background: none; border: none; outline: none; cursor: pointer; padding: 0;">
-            <svg width="80" height="80" viewBox="0 0 80 80">
+        <button id="rightBtn">
+            <svg viewBox="0 0 80 80">
                 <polygon points="20,10 60,40 20,70" fill="#8a0083" stroke="#fff" stroke-width="4"/>
             </svg>
         </button>
