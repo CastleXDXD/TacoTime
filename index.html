@@ -246,7 +246,7 @@
         </div>
     </div>
 
-    <!-- Add this right after the game-container div -->
+    <!-- Touch controls -->
     <div id="touchControls">
         <button id="leftBtn">
             <svg viewBox="0 0 80 80">
@@ -692,6 +692,12 @@
             }
         }
 
+        // Clear touch states helper function
+        function clearTouchStates() {
+            touchingLeft = false;
+            touchingRight = false;
+        }
+
         // Pause game functions
         const pauseOverlay = document.getElementById('pauseOverlay');
         const pauseMusicBtn = document.getElementById('pauseMusicBtn');
@@ -700,6 +706,7 @@
         function pauseGame() {
             gamePaused = true;
             pauseOverlay.style.display = 'flex';
+            clearTouchStates(); // Clear touch states when pausing
             
             // Update pause menu button states to match current settings
             pauseMusicBtn.textContent = musicEnabled ? 'Music: On' : 'Music: Off';
@@ -789,10 +796,20 @@
         const musicBtn = document.getElementById('musicBtn');
         const sfxBtn = document.getElementById('sfxBtn');
 
+        // Touch controls elements
+        const touchControls = document.getElementById('touchControls');
+        const leftBtn = document.getElementById('leftBtn');
+        const rightBtn = document.getElementById('rightBtn');
+
         // Hide canvas and game UI until game starts
         canvas.style.display = 'none';
         scoreElement.style.display = 'none';
         document.getElementById('instructions').style.display = 'none';
+
+        // Update touch controls visibility
+        function updateTouchControlsVisibility() {
+            touchControls.style.display = canvas.style.display !== 'none' ? 'flex' : 'none';
+        }
 
         // Start button event
         startBtn.onclick = function() {
@@ -814,6 +831,7 @@
             difficultyMultiplier = 1; // Reset difficulty
             stopAllMusic(); // Stop menu music
             startGameMusic(); // Start the game music loop
+            updateTouchControlsVisibility(); // Show touch controls
             gameLoop(0); // Start with timestamp 0
         };
 
@@ -845,6 +863,61 @@
             sfxEnabled = !sfxEnabled;
             sfxBtn.textContent = sfxEnabled ? 'SFX: On' : 'SFX: Off';
         };
+
+        // Touch control event handlers
+        // Left button events
+        leftBtn.addEventListener('touchstart', function(e) {
+            if (!gameRunning || gamePaused) return;
+            touchingLeft = true;
+            touchingRight = false;
+            e.preventDefault();
+        }, { passive: false });
+
+        leftBtn.addEventListener('touchend', function(e) {
+            touchingLeft = false;
+            e.preventDefault();
+        }, { passive: false });
+
+        leftBtn.addEventListener('mousedown', function() {
+            if (!gameRunning || gamePaused) return;
+            touchingLeft = true;
+            touchingRight = false;
+        });
+
+        leftBtn.addEventListener('mouseup', function() {
+            touchingLeft = false;
+        });
+
+        leftBtn.addEventListener('mouseleave', function() {
+            touchingLeft = false;
+        });
+
+        // Right button events
+        rightBtn.addEventListener('touchstart', function(e) {
+            if (!gameRunning || gamePaused) return;
+            touchingRight = true;
+            touchingLeft = false;
+            e.preventDefault();
+        }, { passive: false });
+
+        rightBtn.addEventListener('touchend', function(e) {
+            touchingRight = false;
+            e.preventDefault();
+        }, { passive: false });
+
+        rightBtn.addEventListener('mousedown', function() {
+            if (!gameRunning || gamePaused) return;
+            touchingRight = true;
+            touchingLeft = false;
+        });
+
+        rightBtn.addEventListener('mouseup', function() {
+            touchingRight = false;
+        });
+
+        rightBtn.addEventListener('mouseleave', function() {
+            touchingRight = false;
+        });
 
         // Prevent game from running until started
         gameRunning = false;
@@ -1144,6 +1217,8 @@
             tacos = [];
             scoreElement.textContent = 'Score: 0';
             gameRunning = false;
+            clearTouchStates(); // Clear touch states when returning to menu
+            updateTouchControlsVisibility(); // Hide touch controls
             
             // Update taco counter display when returning to menu
             updateTacoCounterDisplay();
@@ -1204,100 +1279,6 @@
         closeLeaderboardBtn.onclick = function() {
             resetToMenu();
         };
-
-        // Add this after game initialization, before the game loop
-
-        const touchControls = document.getElementById('touchControls');
-        const leftBtn = document.getElementById('leftBtn');
-        const rightBtn = document.getElementById('rightBtn');
-
-        // Update touch controls visibility
-        function updateTouchControlsVisibility() {
-            touchControls.style.display = canvas.style.display !== 'none' ? 'flex' : 'none';
-        }
-
-        // Add to existing startBtn.onclick
-        const originalStartBtnOnClick = startBtn.onclick;
-        startBtn.onclick = function() {
-            originalStartBtnOnClick.call(this);
-            updateTouchControlsVisibility();
-        };
-
-        // Add to existing resetToMenu function
-        const originalResetToMenu = window.resetToMenu;
-        window.resetToMenu = function() {
-            if (originalResetToMenu) {
-                originalResetToMenu.call(this);
-            }
-            updateTouchControlsVisibility();
-        }
-
-        // Left button events
-        leftBtn.addEventListener('touchstart', function(e) {
-            if (!gameRunning || gamePaused) return;
-            touchingLeft = true;
-            touchingRight = false;
-            e.preventDefault();
-        }, { passive: false });
-
-        leftBtn.addEventListener('touchend', function(e) {
-            touchingLeft = false;
-            e.preventDefault();
-        }, { passive: false });
-
-        leftBtn.addEventListener('mousedown', function() {
-            if (!gameRunning || gamePaused) return;
-            touchingLeft = true;
-            touchingRight = false;
-        });
-
-        leftBtn.addEventListener('mouseup', function() {
-            touchingLeft = false;
-        });
-
-        leftBtn.addEventListener('mouseleave', function() {
-            touchingLeft = false;
-        });
-
-        // Right button events
-        rightBtn.addEventListener('touchstart', function(e) {
-            if (!gameRunning || gamePaused) return;
-            touchingRight = true;
-            touchingLeft = false;
-            e.preventDefault();
-        }, { passive: false });
-
-        rightBtn.addEventListener('touchend', function(e) {
-            touchingRight = false;
-            e.preventDefault();
-        }, { passive: false });
-
-        rightBtn.addEventListener('mousedown', function() {
-            if (!gameRunning || gamePaused) return;
-            touchingRight = true;
-            touchingLeft = false;
-        });
-
-        rightBtn.addEventListener('mouseup', function() {
-            touchingRight = false;
-        });
-
-        rightBtn.addEventListener('mouseleave', function() {
-            touchingRight = false;
-        });
-
-        // Make sure buttons don't get stuck in pressed state when game pauses
-        function clearTouchStates() {
-            touchingLeft = false;
-            touchingRight = false;
-        }
-
-        // Add to existing pauseGame function
-        const originalPauseGame = pauseGame;
-        function pauseGame() {
-            originalPauseGame.call(this);
-            clearTouchStates();
-        }
     </script>
 </body>
 </html>
