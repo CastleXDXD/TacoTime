@@ -1153,6 +1153,33 @@
         closeLeaderboardBtn.onclick = function() {
             resetToMenu();
         };
+
+        // Touch controls for mobile
+        canvas.addEventListener('touchstart', function(e) {
+            if (!gameRunning || gamePaused) return;
+            const rect = canvas.getBoundingClientRect();
+            for (let i = 0; i < e.touches.length; i++) {
+                const x = e.touches[i].clientX - rect.left;
+                if (x < canvas.width / 2) {
+                    touchingLeft = true;
+                } else {
+                    touchingRight = true;
+                }
+            }
+            e.preventDefault();
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', function(e) {
+            touchingLeft = false;
+            touchingRight = false;
+            e.preventDefault();
+        }, { passive: false });
+
+        canvas.addEventListener('touchcancel', function(e) {
+            touchingLeft = false;
+            touchingRight = false;
+            e.preventDefault();
+        }, { passive: false });
     </script>
 </body>
 </html>
